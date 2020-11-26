@@ -110,13 +110,49 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 const getAllProperties = function(options, limit = 10) {
-  const values = [limit];
-  const queryString = `
-  SELECT * FROM properties
-  LIMIT $1;
+
+  const optionsMap = {
+    city: 'city LIKE $',
+    owner_id : 'owner_id = $',
+    minimum_price_per_night: 'cost_per_night > 100 * $',
+    maximum_price_per_night: 'cost_per_night < 100 * $',
+  };
+
+  const searchStrings = [];
+  const values = [];
+
+  let num = 1;
+  for (const key in options) {
+    if (options[key] && key !== 'minimum_rating') {
+      searchStrings.push(optionsMap[key] + num);
+      values.push((key === 'city') ? '%' + options[key] + '%' : options[key]);
+      num++;
+    }
+  }
+  const search = (searchStrings.length > 0) ? 'WHERE ' + searchStrings.join(' AND ') : '';
+
+  
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  ${search}
+  GROUP BY properties.id
   `;
+  
+  if (options.minimum_rating) {
+    values.push(options.minimum_rating);
+    queryString += `HAVING avg(property_reviews.rating) > $${values.length}`;
+  }
+
+  values.push(limit);
+  queryString += `
+  ORDER BY cost_per_night
+  LIMIT $${values.length};
+  `;
+
   return pool.query(queryString, values)
-  .then(res => res.rows)      
+  .then(res => res.rows);
 }
 exports.getAllProperties = getAllProperties;
 
